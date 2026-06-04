@@ -1,0 +1,112 @@
+{
+  "groupName": "Boys Bridge",
+  "target": 6,
+  "players": [
+    {
+      "id": "p1",
+      "name": "Dade Lunsford"
+    },
+    {
+      "id": "p2",
+      "name": "Don Middleton"
+    },
+    {
+      "id": "p4",
+      "name": "Steve Lackey"
+    },
+    {
+      "id": "p5",
+      "name": "Richard Reed"
+    },
+    {
+      "id": "p6",
+      "name": "Dave Bennett"
+    },
+    {
+      "id": "p7",
+      "name": "Chip Crawford"
+    },
+    {
+      "id": "p8",
+      "name": "Bill Dawson"
+    },
+    {
+      "id": "p8",
+      "name": "Alex Scott"
+    },
+    {
+      "id": "p9",
+      "name": "Harrison Lauer"
+    },
+    {
+      "id": "p10",
+      "name": "Jeff Baum"
+    }
+  ],
+  "weeks": [
+    {
+      "id": "w2026-06-05",
+      "date": "2026-06-05",
+      "label": "Thu, Jun 4",
+      "statuses": {
+        "p1": "",
+        "p2": "",
+        "p4": "",
+        "p5": "",
+        "p6": "",
+        "p7": "",
+        "p8": "",
+        "p9": "",
+        "p10": ""
+      }
+    },
+    {
+      "id": "w2026-06-12",
+      "date": "2026-06-12",
+      "label": "Thu, Jun 11",
+      "statuses": {
+        "p1": "",
+        "p2": "",
+        "p4": "",
+        "p5": "",
+        "p6": "",
+        "p7": "",
+        "p8": "",
+        "p9": "",
+        "p10": ""
+      }
+    },
+    {
+      "id": "w2026-06-19",
+      "date": "2026-06-19",
+      "label": "Thu, Jun 18",
+      "statuses": {
+        "p1": "",
+        "p2": "",
+        "p4": "",
+        "p5": "",
+        "p6": "",
+        "p7": "",
+        "p8": "",
+        "p9": "",
+        "p10": ""
+      }
+    },
+    {
+      "id": "w2026-06-26",
+      "date": "2026-06-26",
+      "label": "Thu, Jun 25",
+      "statuses": {
+        "p1": "",
+        "p2": "",
+        "p4": "",
+        "p5": "",
+        "p6": "",
+        "p7": "",
+        "p8": "",
+        "p9": "",
+        "p10": ""
+      }
+    }
+  ]
+}
