@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Boys Bridge Availability</title>
+  <style>
+    :root {
+      --bg: #f6f7fb;
+      --card: #fff;
+      --text: #1f2d3d;
+      --muted: #5b6b82;
+      --yes: #2e7d32;
+      --maybe: #f59e0b;
+      --no: #c0392b;
+      --grid: #e9eef5;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.4;
+    }
+    .card {
+      max-width: 1200px;
+      margin: 28px auto;
+      background: var(--card);
+      padding: 20px 24px;
+      border-radius: 10px;
+      box-shadow: 0 2px 12px rgba(0,0,0,.08);
+    }
+    h1 { margin: 0 0 8px; font-size: 1.4rem; }
+    p { color: var(--muted); margin: 6px 0 12px; }
+
+    .panel {
+      background: #fff;
+      border: 1px solid var(--grid);
+      border-radius: 8px;
+      padding: 12px;
+      margin: 10px 0;
+      display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+    }
+
+    table {
+      width: 100%; border-collapse: collapse; margin-top: 6px;
+      table-layout: fixed;
+    }
+    th, td {
+      border: 1px solid var(--grid);
+      padding: 8px;
+      text-align: center;
+      vertical-align: middle;
+      font-size: 0.92rem;
+      word-wrap: break-word;
+    }
+    th {
+      background: #f4f7fb;
+      font-weight: 600;
+      color: #1b2b45;
+      position: sticky; top: 0; z-index: 1;
+    }
+    td.player { text-align: left; font-weight: 600; }
+
+    .cell-select select {
+      padding: 4px 8px; border-radius: 6px; border: 1px solid #ccc;
+    }
+
+    .hidden { display: none; }
+
+    @media (max-width: 900px) {
+      table { display: block; overflow-x: auto; }
+      th, td { white-space: nowrap; }
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Boys Bridge Availability</h1>
+    <p>Track Thursday 10:00–12:00 availability for the next 4 weeks. Data stays in this browser (localStorage).</p>
+
+    <!-- Group controls -->
+    <div class="panel" aria-label="Group controls">
+      <input id="groupName" type="text" placeholder="Group name (e.g., Boys Bridge Crew)" style="flex:1 1 250px;" />
+      <label style="margin-left:6px;">Target per week</label>
+      <input id="target" type="number" min="1" max="20" value="6" />
+      <button id="newGroupBtn" title="Reset group data" style="margin-left:6px;">New Group</button>
+      <button id="exportBtn" title="Export data" style="margin-left:auto;">Export JSON</button>
+      <button id="importBtn" title="Import JSON" style="margin-left:6px;">Import JSON</button>
+      <button id="shareBtn" title="Copy a shareable link" style="margin-left:6px;">Share Link</button>
+    </div>
+
+    <!-- Add player -->
+    <div class="panel" aria-label="Add player">
+      <input id="newPlayer" type="text" placeholder="Add player (max 20 total)" maxlength="40" style="flex:1 1 240px;" />
+      <button id="addBtn" disabled>Add Player</button>
+      <span id="playerCount" class="hint" aria-live="polite" style="margin-left:auto;"></span>
+    </div>
+
+    <!-- App area: table of players x weeks -->
+    <div class="panel" aria-label="Week and players" id="appArea">
+      <!-- Dynamic content will be injected here -->
+    </div>
+
+    <div id="summary" class="panel hidden" aria-live="polite"></div>
+
+    <p class="hint" aria-live="polite">
+      Tip: Use the share link to invite others to view or edit (data is stored locally in your browser unless exported/imported).
+    </p>
+  </div>
+
+  <script>
+    // Local data model
+    const storageKey = 'boys_bridge_availability_demo';
+    let data = {
+      groupName: 'Boys Bridge',
+      target: 6,
+      players: [
+        { id: 'p1', name: 'John Doe' },
+        { id: 'p2', name: 'Alex Smith' },
+        { id: 'p3', name: 'Chris Lane' },
+        { id: 'p4', name: 'Mike Reed' }
+      ],
+      weeks: [] // will be generated for next 4 Thursdays
+    };
+
+    // Utility: generate next Thursdays
+    function nextThursdays(n) {
+      const today = new Date();
+      const day = today.getDay();
+      let daysUntilThu = (4 - day + 7) % 7;
+      if (daysUntilThu === 0) daysUntilThu = 7;
+      const firstThu = new Date(today);
+      firstThu.setDate(today.getDate() + daysUntilThu);
+      const weeks = [];
+      for (let i = 0; i < n; i++) {
+        const d = new Date(firstThu);
+        d.setDate(firstThu.getDate() + i * 7);
+        const iso = d.toISOString().slice(0, 10);
+        const label = d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+        weeks.push({ id: 'w' + iso, date: iso, label });
+      }
+      return weeks;
+    }
+
+    function saveData() {
+      localStorage.setItem(storageKey, JSON.stringify(data));
+    }
+
+    function loadData() {
+      const saved = localStorage.getItem(storageKey);
+      if (saved) {
+        try {
+          data = JSON.parse(saved);
+        } catch(e) {
+          console.warn('Could not parse saved data, using defaults.');
+        }
+      }
+
+      // Initialize 4 weeks if needed
+      if (!data.weeks || data.weeks.length === 0) {
+        data.weeks = nextThursdays(4).map(w => ({
+          id: w.id,
+          date: w.date,
+          label: w.label,
+          statuses: {} // pid => 'yes'|'maybe'|'no'
+        }));
+        saveData();
+      }
+      if (!Array.isArray(data.players)) data.players = [];
+    }
+
+    // UI helpers
+    function render() {
+      document.getElementById('groupName').value = data.groupName;
+      document.getElementById('target').value = data.target;
+
+      const appArea = document.getElementById('appArea');
+      appArea.innerHTML = '';
+
+      // Build table header
+      const table = document.createElement('table');
+      const thead = document.createElement('thead');
+      const trHead = document.createElement('tr');
+
+      const thName = document.createElement('th');
+      thName.textContent = 'Player';
+      trHead.appendChild(thName);
+
+      data.weeks.forEach(week => {
+        const th = document.createElement('th');
+        th.textContent = week.label;
+        th.title = week.date;
+        trHead.appendChild(th);
+      });
+
+      const thActions = document.createElement('th');
+      thActions.textContent = 'Actions';
+      trHead.appendChild(thActions);
+
+      thead.appendChild(trHead);
+      table.appendChild(thead);
+
+      // Body: players rows
+      const tbody = document.createElement('tbody');
+      data.players.forEach(p => {
+        const tr = document.createElement('tr');
+        tr.setAttribute('data-pid', p.id);
+
+        const tdName = document.createElement('td');
+        tdName.className = 'player';
+        tdName.textContent = p.name;
+        tr.appendChild(tdName);
+
+        data.weeks.forEach(week => {
+          const td = document.createElement('td');
+          td.className = 'cell-select';
+          const select = document.createElement('select');
+          select.setAttribute('data-pid', p.id);
+          select.setAttribute('data-wid', week.id);
+
+          const optBlur = document.createElement('option');
+          optBlur.value = '';
+          optBlur.textContent = '—';
+          const optYes = document.createElement('option');
+          optYes.value = 'yes';
+          optYes.textContent = 'Yes';
+          const optMaybe = document.createElement('option');
+          optMaybe.value = 'maybe';
+          optMaybe.textContent = 'Maybe';
+          const optNo = document.createElement('option');
+          optNo.value = 'no';
+          optNo.textContent = 'No';
+
+          select.appendChild(optBlur);
+          select.appendChild(optYes);
+          select.appendChild(optMaybe);
+          select.appendChild(optNo);
+
+          const current = (week.statuses && week.statuses[p.id]) || '';
+          select.value = current;
+
+          select.addEventListener('change', () => {
+            if (!week.statuses) week.statuses = {};
+            week.statuses[p.id] = select.value;
+            saveData();
+            renderTotals();
+          });
+
+          td.appendChild(select);
+          tr.appendChild(td);
+        });
+
+        // Delete button
+        const tdDel = document.createElement('td');
+        const delBtn = document.createElement('button');
+        delBtn.textContent = 'Delete';
+        delBtn.title = 'Remove this player';
+        delBtn.addEventListener('click', () => {
+          if (!confirm('Delete this player? This cannot be undone.')) return;
+          data.players = data.players.filter(pp => pp.id !== p.id);
+          data.weeks.forEach(week => { if (week.statuses) delete week.statuses[p.id]; });
+          saveData();
+          render();
+        });
+        tdDel.appendChild(delBtn);
+        tr.appendChild(tdDel);
+
+        tbody.appendChild(tr);
+      });
+
+      if (data.players.length === 0) {
+        const tr = document.createElement('tr');
+        const td = document.createElement('td');
+        td.colSpan = data.weeks.length + 2;
+        td.style.color = '#555';
+        td.textContent = 'No players yet. Use the Add Player field above to start (up to 20 players).';
+        tr.appendChild(td);
+        tbody.appendChild(tr);
+      }
+
+      table.appendChild(tbody);
+      appArea.appendChild(table);
+
+      renderTotals();
+      updateAddState();
+      document.getElementById('playerCount').textContent = `Players: ${data.players.length}/20`;
+    }
+
+    function renderTotals() {
+      const summaryEl = document.getElementById('summary');
+      const lines = data.weeks.map(week => {
+        let yes = 0, maybe = 0, no = 0;
+        data.players.forEach(p => {
+          const st = (week.statuses && week.statuses[p.id]) || '';
+          if (st === 'yes') yes++;
+          else if (st === 'maybe') maybe++;
+          else if (st === 'no') no++;
+        });
+        return { week, yes, maybe, no };
+      });
+
+      let html = '<strong>Weekly Availability</strong><br/>';
+      lines.forEach(l => {
+        html += `<div>${l.week.label}: Yes ${l.yes}, Maybe ${l.maybe}, No ${l.no} (Target ${data.target})</div>`;
+      });
+
+      const fulfilled = lines.filter(l => l.yes >= data.target).length;
+      html += `<div style="margin-top:6px;">Weeks meeting target: ${fulfilled} / ${lines.length}</div>`;
+
+      summaryEl.innerHTML = html;
+      summaryEl.classList.toggle('hidden', lines.length === 0);
+    }
+
+    // Export / Import JSON
+    function exportData() {
+      const blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'boys_bridge_availability.json';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
+    function importData() {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'application/json';
+      input.onchange = async () => {
+        const file = input.files[0];
+        if (!file) return;
+        const text = await file.text();
+        try {
+          const obj = JSON.parse(text);
+          if (obj && obj.weeks && obj.players) {
+            data = obj;
+            if (!data.weeks || data.weeks.length !== 4) {
+              data.weeks = nextThursdays(4).map(w => ({
+                id: w.id, date: w.date, label: w.label, statuses: {}
+              }));
+            }
+            saveData();
+            render();
+          } else {
+            alert('Invalid data format.');
+          }
+        } catch (e) {
+          alert('Error parsing JSON.');
+        }
+      };
+      input.click();
+    }
+
+    // Shareable link
+    function encodeDataToURL() {
+      const payload = encodeURIComponent(JSON.stringify(data));
+      const url = new URL(window.location.href);
+      url.searchParams.set('data', payload);
+      navigator.clipboard.writeText(url.toString()).then(() => {
+        alert('Shareable link copied to clipboard.');
+      }).catch(() => {
+        prompt('Copy this link:', url.toString());
+      });
+    }
+
+    function initializeFromURL() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const dataParam = urlParams.get('data');
+      if (dataParam) {
+        try {
+          const decoded = JSON.parse(decodeURIComponent(dataParam));
+          if (decoded && decoded.weeks && decoded.players) {
+            data = decoded;
+          }
+        } catch (e) {
+          console.warn('Could not parse data from URL. Using local data.');
+        }
+      }
+    }
+
+    // Add player
+    function addPlayer(name) {
+      const trimmed = name.trim();
+      if (!trimmed) return;
+      if (data.players.length >= 20) {
+        alert('Maximum of 20 players reached.');
+        return;
+      }
+      const newId = 'p' + (data.players.length + 1);
+      data.players.push({ id: newId, name: trimmed });
+      data.weeks.forEach(week => {
+        if (!week.statuses) week.statuses = {};
+        week.statuses[newId] = '';
+      });
+      saveData();
+      render();
+    }
+
+    // Reset data
+    function resetData() {
+      if (!confirm('Reset group data to defaults?')) return;
+      data = {
+        groupName: 'Boys Bridge',
+        target: 6,
+        players: [],
+        weeks: nextThursdays(4).map(w => ({
+          id: w.id, date: w.date, label: w.label, statuses: {}
+        }))
+      };
+      saveData();
+      render();
+    }
+
+    // UI state
+    function updateAddState() {
+      const newName = document.getElementById('newPlayer').value.trim();
+      const canAdd = newName.length > 0 && data.players.length < 20;
+      document.getElementById('addBtn').disabled = !canAdd;
+      document.getElementById('playerCount').textContent = `Players: ${data.players.length}/20`;
+    }
+
+    // Wire up UI events
+    document.getElementById('newGroupBtn').addEventListener('click', () => {
+      const gName = document.getElementById('groupName').value.trim() || 'Boys Bridge';
+      const tgt = parseInt(document.getElementById('target').value || '6', 10);
+      data.groupName = gName;
+      data.target = Number.isFinite(tgt) ? Math.max(1, tgt) : 6;
+      data.weeks.forEach(week => { week.statuses = {}; });
+      saveData();
+      renderTotals();
+      render();
+    });
+
+    document.getElementById('exportBtn').addEventListener('click', exportData);
+    document.getElementById('importBtn').addEventListener('click', importData);
+    document.getElementById('shareBtn').addEventListener('click', encodeDataToURL);
+
+    // Add new player
+    const newPlayerInput = document.getElementById('newPlayer');
+    const addBtn = document.getElementById('addBtn');
+    newPlayerInput.addEventListener('input', updateAddState);
+    addBtn.addEventListener('click', () => {
+      addPlayer(newPlayerInput.value);
+      newPlayerInput.value = '';
+      updateAddState();
+    });
+    newPlayerInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !addBtn.disabled) addBtn.click();
+    });
+
+    // Live updates
+    document.getElementById('groupName').addEventListener('input', (e) => {
+      data.groupName = e.target.value;
+      saveData();
+    });
+    document.getElementById('target').addEventListener('change', (e) => {
+      const v = parseInt(e.target.value, 10);
+      if (!isNaN(v)) {
+        data.target = v;
+        saveData();
+        renderTotals();
+      }
+    });
+
+    // Init
+    loadData();
+    initializeFromURL();
+    render();
+    updateAddState();
+    newPlayerInput.focus();
+  </script>
+</body>
+</html>
