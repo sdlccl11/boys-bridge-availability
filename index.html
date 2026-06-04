@@ -80,28 +80,28 @@
     <h1>Boys Bridge Availability</h1>
     <p>Track Thursday 10:00–12:00 availability for the next 4 weeks. Data stays in this browser (localStorage).</p>
 
-    <!-- Group controls -->
-    <div class="panel" aria-label="Group controls">
+    <!-- Controls -->
+    <div class="panel" id="controls" aria-label="Group controls">
       <input id="groupName" type="text" placeholder="Group name (e.g., Boys Bridge Crew)" style="flex:1 1 250px;" />
       <label style="margin-left:6px;">Target per week</label>
       <input id="target" type="number" min="1" max="20" value="6" />
-      <button id="newGroupBtn" title="Reset group data" style="margin-left:6px;">New Group</button>
-      <button id="exportBtn" title="Export data" style="margin-left:auto;">Export JSON</button>
-      <button id="importBtn" title="Import JSON" style="margin-left:6px;">Import JSON</button>
-      <button id="shareBtn" title="Copy a shareable link" style="margin-left:6px;">Share Link</button>
+      <button id="newGroupBtn" style="margin-left:6px;">New Group</button>
+      <button id="exportBtn" style="margin-left:auto;">Export JSON</button>
+      <button id="importBtn" style="margin-left:6px;">Import JSON</button>
+      <button id="shareBtn" style="margin-left:6px;">Share Link</button>
+      <button id="exportPlayersBtn" style="margin-left:6px;">Export Players</button>
+      <button id="importPlayersBtn" style="margin-left:6px;">Import Players</button>
     </div>
 
     <!-- Add player -->
-    <div class="panel" aria-label="Add player">
+    <div class="panel" id="addPanel" aria-label="Add player">
       <input id="newPlayer" type="text" placeholder="Add player (max 20 total)" maxlength="40" style="flex:1 1 240px;" />
       <button id="addBtn" disabled>Add Player</button>
       <span id="playerCount" class="hint" aria-live="polite" style="margin-left:auto;"></span>
     </div>
 
     <!-- App area: table of players x weeks -->
-    <div class="panel" aria-label="Week and players" id="appArea">
-      <!-- Dynamic content will be injected here -->
-    </div>
+    <div class="panel" id="appArea" aria-label="Week and players"></div>
 
     <div id="summary" class="panel hidden" aria-live="polite"></div>
 
@@ -111,6 +111,9 @@
   </div>
 
   <script>
+    // Config: filename for players JSON
+    const PLAYERS_FILE = 'players.json'; // optional, place in repo if you want to preload
+
     // Local data model
     const storageKey = 'boys_bridge_availability_demo';
     let data = {
@@ -122,10 +125,10 @@
         { id: 'p3', name: 'Chris Lane' },
         { id: 'p4', name: 'Mike Reed' }
       ],
-      weeks: [] // will be generated for next 4 Thursdays
+      weeks: [] // will be filled with next 4 Thursdays
     };
 
-    // Utility: generate next Thursdays
+    // Utilities
     function nextThursdays(n) {
       const today = new Date();
       const day = today.getDay();
@@ -171,15 +174,260 @@
       if (!Array.isArray(data.players)) data.players = [];
     }
 
-    // UI helpers
+    // Load players from external file (players.json)
+    function loadPlayersFromFile() {
+      // Only try to fetch if running from a server (e.g., localhost) or GitHub Pages
+      if (typeof fetch === 'function') {
+        fetch(PLAYERS_FILE)
+          .then(res => {
+            if (!res.ok) throw new Error('No players file');
+            return res.json();
+          })
+          .then(obj => {
+            if (obj && Array.isArray(obj.players)) {
+              data.players = obj.players.map((p, idx) => ({
+                id: p.id || ('p' + (idx + 1)),
+                name: p.name || ('Player ' + (idx + 1))
+              }));
+              // Ensure statuses exist
+              data.weeks.forEach(week => {
+                if (!week.statuses) week.statuses = {};
+                data.players.forEach(player => {
+                  if (!(player.id in week.statuses)) week.statuses[player.id] = '';
+                });
+              });
+              saveData();
+              render();
+            }
+          })
+          .catch(() => {
+            // ignore if file not found
+          });
+      }
+    }
+
+    // Save only players to a file (export)
+    function exportPlayersToFile() {
+      const blob = new Blob([JSON.stringify({ players: data.players }, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'players.json';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
+    // Import players from file (input)
+    function importPlayersFromFile() {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'application/json';
+      input.onchange = async () => {
+        const file = input.files[0];
+        if (!file) return;
+        const text = await file.text();
+        try {
+          const obj = JSON.parse(text);
+          if (obj && Array.isArray(obj.players)) {
+            data.players = obj.players;
+            // Rebuild per-week statuses
+            data.weeks.forEach(week => {
+              if (!week.statuses) week.statuses = {};
+              data.players.forEach(p => {
+                if (!(p.id in week.statuses)) week.statuses[p.id] = '';
+              });
+            });
+            saveData();
+            render();
+          } else {
+            alert('Invalid players JSON. It should contain a "players" array.');
+          }
+        } catch (e) {
+          alert('Error parsing JSON.');
+        }
+      };
+      input.click();
+    }
+
+    // Shareable link (embed data in URL)
+    function encodeDataToURL() {
+      const payload = encodeURIComponent(JSON.stringify(data));
+      const url = new URL(window.location.href);
+      url.searchParams.set('data', payload);
+      navigator.clipboard.writeText(url.toString()).then(() => {
+        alert('Shareable link copied to clipboard.');
+      }).catch(() => {
+        prompt('Copy this link:', url.toString());
+      });
+    }
+
+    function initializeFromURL() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const dataParam = urlParams.get('data');
+      if (dataParam) {
+        try {
+          const decoded = JSON.parse(decodeURIComponent(dataParam));
+          if (decoded && decoded.weeks && decoded.players) {
+            data = decoded;
+          }
+        } catch (e) {
+          console.warn('Could not parse data from URL. Using local data.');
+        }
+      }
+    }
+
+    // Add a new player
+    function addPlayer(name) {
+      const trimmed = name.trim();
+      if (!trimmed) return;
+      if (data.players.length >= 20) {
+        alert('Maximum of 20 players reached.');
+        return;
+      }
+      const newId = 'p' + (data.players.length + 1);
+      data.players.push({ id: newId, name: trimmed });
+      data.weeks.forEach(week => {
+        if (!week.statuses) week.statuses = {};
+        week.statuses[newId] = '';
+      });
+      saveData();
+      render();
+    }
+
+    // Reset data (New Group)
+    function resetData() {
+      if (!confirm('Reset group data to defaults?')) return;
+      data = {
+        groupName: 'Boys Bridge',
+        target: 6,
+        players: [
+          { id: 'p1', name: 'John Doe' },
+          { id: 'p2', name: 'Alex Smith' },
+          { id: 'p3', name: 'Chris Lane' },
+          { id: 'p4', name: 'Mike Reed' }
+        ],
+        weeks: nextThursdays(4).map(w => ({
+          id: w.id, date: w.date, label: w.label, statuses: {}
+        }))
+      };
+      saveData();
+      render();
+    }
+
+    // UI state
+    function updateAddState() {
+      const newName = document.getElementById('newPlayer').value.trim();
+      const canAdd = newName.length > 0 && data.players.length < 20;
+      document.getElementById('addBtn').disabled = !canAdd;
+      document.getElementById('playerCount').textContent = `Players: ${data.players.length}/20`;
+    }
+
+    // Wire up UI events (all bindings done after DOM ready)
+    document.addEventListener('DOMContentLoaded', () => {
+      // Initialize data
+      loadData();
+      initializeFromURL();
+
+      // Bind control buttons
+      document.getElementById('newGroupBtn').addEventListener('click', () => {
+        const gName = document.getElementById('groupName').value.trim() || 'Boys Bridge';
+        const tgt = parseInt(document.getElementById('target').value || '6', 10);
+        data.groupName = gName;
+        data.target = Number.isFinite(tgt) ? Math.max(1, tgt) : 6;
+        data.weeks.forEach(week => { week.statuses = {}; });
+        saveData();
+        renderTotals();
+        render();
+      });
+
+      document.getElementById('exportBtn').addEventListener('click', () => {
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'boys_bridge_availability.json';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      });
+
+      document.getElementById('importBtn').addEventListener('click', () => {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'application/json';
+        input.onchange = async () => {
+          const file = input.files[0];
+          if (!file) return;
+          const text = await file.text();
+          try {
+            const obj = JSON.parse(text);
+            if (obj && obj.weeks && obj.players) {
+              data = obj;
+              if (!data.weeks || data.weeks.length !== 4) {
+                data.weeks = nextThursdays(4).map(w => ({
+                  id: w.id, date: w.date, label: w.label, statuses: {}
+                }));
+              }
+              saveData();
+              render();
+            } else {
+              alert('Invalid data format.');
+            }
+          } catch (e) {
+            alert('Error parsing JSON.');
+          }
+        };
+        input.click();
+      });
+
+      document.getElementById('shareBtn').addEventListener('click', () => encodeDataToURL());
+
+      document.getElementById('exportPlayersBtn').addEventListener('click', exportPlayersToFile);
+      document.getElementById('importPlayersBtn').addEventListener('click', importPlayersFromFile);
+
+      // Add player
+      const newPlayerInput = document.getElementById('newPlayer');
+      const addBtn = document.getElementById('addBtn');
+      newPlayerInput.addEventListener('input', updateAddState);
+      addBtn.addEventListener('click', () => {
+        addPlayer(newPlayerInput.value);
+        newPlayerInput.value = '';
+        updateAddState();
+      });
+      newPlayerInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          if (!addBtn.disabled) addBtn.click();
+        }
+      });
+
+      // Live updates
+      document.getElementById('groupName').addEventListener('input', (e) => {
+        data.groupName = e.target.value;
+        saveData();
+      });
+      document.getElementById('target').addEventListener('change', (e) => {
+        const v = parseInt(e.target.value, 10);
+        if (!isNaN(v)) {
+          data.target = v;
+          saveData();
+          renderTotals();
+        }
+      });
+    });
+
+    // Render helpers and core logic
     function render() {
+      // Sync group controls
       document.getElementById('groupName').value = data.groupName;
       document.getElementById('target').value = data.target;
 
+      // Build app area
       const appArea = document.getElementById('appArea');
       appArea.innerHTML = '';
 
-      // Build table header
       const table = document.createElement('table');
       const thead = document.createElement('thead');
       const trHead = document.createElement('tr');
@@ -202,7 +450,6 @@
       thead.appendChild(trHead);
       table.appendChild(thead);
 
-      // Body: players rows
       const tbody = document.createElement('tbody');
       data.players.forEach(p => {
         const tr = document.createElement('tr');
@@ -313,7 +560,7 @@
       summaryEl.classList.toggle('hidden', lines.length === 0);
     }
 
-    // Export / Import JSON
+    // Helpers: export/import JSON for roster
     function exportData() {
       const blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
       const url = URL.createObjectURL(blob);
@@ -355,7 +602,7 @@
       input.click();
     }
 
-    // Shareable link
+    // Quick share link
     function encodeDataToURL() {
       const payload = encodeURIComponent(JSON.stringify(data));
       const url = new URL(window.location.href);
@@ -367,6 +614,7 @@
       });
     }
 
+    // Initialize from URL
     function initializeFromURL() {
       const urlParams = new URLSearchParams(window.location.search);
       const dataParam = urlParams.get('data');
@@ -382,7 +630,7 @@
       }
     }
 
-    // Add player
+    // Add a new player
     function addPlayer(name) {
       const trimmed = name.trim();
       if (!trimmed) return;
@@ -406,7 +654,12 @@
       data = {
         groupName: 'Boys Bridge',
         target: 6,
-        players: [],
+        players: [
+          { id: 'p1', name: 'John Doe' },
+          { id: 'p2', name: 'Alex Smith' },
+          { id: 'p3', name: 'Chris Lane' },
+          { id: 'p4', name: 'Mike Reed' }
+        ],
         weeks: nextThursdays(4).map(w => ({
           id: w.id, date: w.date, label: w.label, statuses: {}
         }))
@@ -415,63 +668,33 @@
       render();
     }
 
-    // UI state
-    function updateAddState() {
-      const newName = document.getElementById('newPlayer').value.trim();
-      const canAdd = newName.length > 0 && data.players.length < 20;
-      document.getElementById('addBtn').disabled = !canAdd;
-      document.getElementById('playerCount').textContent = `Players: ${data.players.length}/20`;
+    // Init render
+    function runInitIfNeeded() {
+      // Ensure 4 weeks exist
+      if (!data.weeks || data.weeks.length === 0) {
+        data.weeks = nextThursdays(4).map(w => ({
+          id: w.id, date: w.date, label: w.label, statuses: {}
+        }));
+      }
     }
 
-    // Wire up UI events
-    document.getElementById('newGroupBtn').addEventListener('click', () => {
-      const gName = document.getElementById('groupName').value.trim() || 'Boys Bridge';
-      const tgt = parseInt(document.getElementById('target').value || '6', 10);
-      data.groupName = gName;
-      data.target = Number.isFinite(tgt) ? Math.max(1, tgt) : 6;
-      data.weeks.forEach(week => { week.statuses = {}; });
-      saveData();
-      renderTotals();
+    // Bind quick interactions on first load
+    (function bootstrap() {
+      // Set initial UI state
+      loadData();
+      initializeFromURL();
+
+      // Bind remove buttons for future-proof: (handled in render)
+      // Load players.json if present (best effort)
+      loadPlayersFromFile();
+
+      // Initial render
       render();
-    });
-
-    document.getElementById('exportBtn').addEventListener('click', exportData);
-    document.getElementById('importBtn').addEventListener('click', importData);
-    document.getElementById('shareBtn').addEventListener('click', encodeDataToURL);
-
-    // Add new player
-    const newPlayerInput = document.getElementById('newPlayer');
-    const addBtn = document.getElementById('addBtn');
-    newPlayerInput.addEventListener('input', updateAddState);
-    addBtn.addEventListener('click', () => {
-      addPlayer(newPlayerInput.value);
-      newPlayerInput.value = '';
       updateAddState();
-    });
-    newPlayerInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && !addBtn.disabled) addBtn.click();
-    });
 
-    // Live updates
-    document.getElementById('groupName').addEventListener('input', (e) => {
-      data.groupName = e.target.value;
-      saveData();
-    });
-    document.getElementById('target').addEventListener('change', (e) => {
-      const v = parseInt(e.target.value, 10);
-      if (!isNaN(v)) {
-        data.target = v;
-        saveData();
-        renderTotals();
-      }
-    });
-
-    // Init
-    loadData();
-    initializeFromURL();
-    render();
-    updateAddState();
-    newPlayerInput.focus();
+      // Focus to add quickly
+      document.getElementById('newPlayer').focus();
+    })();
   </script>
 </body>
 </html>
